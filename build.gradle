@@ -34,3 +34,10 @@ dependencies {
 tasks.named('test') {
 	useJUnitPlatform()
 }
+
+tasks.register('generateDataset', Exec) {
+	description = 'Genera CSV de personas y follows usando scripts/generate_data.py'
+	group = 'data'
+	workingDir projectDir
+	commandLine 'python', 'scripts/generate_data.py'
+}
