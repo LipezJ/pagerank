@@ -15,9 +15,12 @@ import org.springframework.util.StringUtils;
 
 import com.pagerank.pagerank.domain.model.Person;
 import com.pagerank.pagerank.domain.model.Rank;
+import com.pagerank.pagerank.domain.model.Follow;
 import com.pagerank.pagerank.domain.repository.PersonRepository;
 import com.pagerank.pagerank.domain.repository.RankRepository;
+import com.pagerank.pagerank.domain.repository.FollowRepository;
 import com.pagerank.pagerank.web.dto.SearchResult;
+import com.pagerank.pagerank.web.dto.SearchResult.Contributor;
 
 @Service
 @Transactional(readOnly = true)
@@ -25,13 +28,15 @@ public class SearchService {
 
 	private final PersonRepository personRepository;
 	private final RankRepository rankRepository;
+	private final FollowRepository followRepository;
 	private final DateTimeFormatter formatter = DateTimeFormatter.ofPattern("uuuu-MM-dd HH:mm")
 			.withLocale(Locale.getDefault());
 	private final ZoneId zoneId = ZoneId.systemDefault();
 
-	public SearchService(PersonRepository personRepository, RankRepository rankRepository) {
+	public SearchService(PersonRepository personRepository, RankRepository rankRepository, FollowRepository followRepository) {
 		this.personRepository = personRepository;
 		this.rankRepository = rankRepository;
+		this.followRepository = followRepository;
 	}
 
 	public List<SearchResult> search(String query, int limit) {
@@ -68,10 +73,8 @@ public class SearchService {
 	private SearchResult toResultFromRank(Rank rank) {
 		Person person = rank.getPerson();
 		String explanation = "Score " + formatScore(rank.getScore());
-		if (rank.getUpdatedAt() != null) {
-			explanation += " - actualizado " + formatter.format(rank.getUpdatedAt().atZone(zoneId));
-		}
-		return new SearchResult(person.getName(), rank.getScore(), explanation);
+		List<Contributor> contributors = topContributors(person, 3);
+		return new SearchResult(person.getName(), rank.getScore(), explanation, contributors, rank.getUpdatedAt());
 	}
 
 	private SearchResult toResultFromPerson(Person person) {
@@ -81,10 +84,28 @@ public class SearchService {
 		String explanation = score > 0
 				? "Score " + formatScore(score)
 				: "Aun sin calculo de PageRank";
-		return new SearchResult(person.getName(), score, explanation);
+		return new SearchResult(person.getName(), score, explanation, List.of(), null);
 	}
 
 	private String formatScore(double score) {
 		return String.format(Locale.US, "%.5f", score);
+	}
+
+	private List<Contributor> topContributors(Person target, int limit) {
+		return followRepository.findByTargetId(target.getId()).stream()
+				.map(follow -> {
+					double sourceScore = rankRepository.findById(follow.getSource().getId())
+							.map(Rank::getScore)
+							.orElse(0.0);
+					double outWeightSum = followRepository.findBySourceId(follow.getSource().getId()).stream()
+							.mapToDouble(Follow::getQuality)
+							.sum();
+					double normalized = outWeightSum > 0 ? (follow.getQuality() / outWeightSum) : 0.0;
+					double contribution = sourceScore * normalized;
+					return new Contributor(follow.getSource().getName(), contribution);
+				})
+				.sorted((a, b) -> Double.compare(b.contribution(), a.contribution()))
+				.limit(limit)
+				.collect(Collectors.toList());
 	}
 }

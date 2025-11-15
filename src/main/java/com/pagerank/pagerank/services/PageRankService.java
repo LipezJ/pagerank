@@ -12,6 +12,7 @@ import java.util.Map;
 import java.util.Set;
 import java.util.function.Function;
 import java.util.stream.Collectors;
+import java.util.concurrent.atomic.AtomicReference;
 
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
@@ -39,6 +40,7 @@ public class PageRankService {
 	private final RankRepository rankRepository;
 	private final RankDeltaRepository rankDeltaRepository;
 	private final PagerankSettingsProperties settings;
+	private final AtomicReference<PageRankResult> lastResult = new AtomicReference<>();
 
 	public PageRankService(
 			PersonRepository personRepository,
@@ -55,25 +57,27 @@ public class PageRankService {
 
 	@Transactional
 	public PageRankResult runBatchComputation() {
-		Instant start = Instant.now();
 		GraphSnapshot snapshot = snapshotGraph();
 		if (snapshot.nodeCount() == 0) {
-			return new PageRankResult(0, 0.0, 0, true, Duration.between(start, Instant.now()));
+			PageRankResult empty = new PageRankResult("batch", 0, 0.0, 0, true, false, Duration.ZERO);
+			lastResult.set(empty);
+			return empty;
 		}
 
-		ComputationOutcome outcome = compute(snapshot, null, settings.maxIters());
+		ComputationOutcome outcome = compute(snapshot, null, settings.maxIters(), settings.maxUpdateDuration());
 		persistRanks(snapshot.persons(), outcome.scores());
 
-		Duration elapsed = Duration.between(start, Instant.now());
 		log.info("PageRank batch completed: nodes={}, iterations={}, avgDelta={}, converged={}, elapsed={} ms",
 				snapshot.nodeCount(),
 				outcome.iterations(),
 				String.format(Locale.US, "%.6f", outcome.averageDelta()),
 				outcome.converged(),
-				elapsed.toMillis());
+				outcome.elapsed().toMillis());
 
-		return new PageRankResult(outcome.iterations(), outcome.averageDelta(), snapshot.nodeCount(),
-				outcome.converged(), elapsed);
+		PageRankResult result = new PageRankResult("batch", outcome.iterations(), outcome.averageDelta(),
+				snapshot.nodeCount(), outcome.converged(), outcome.timeLimited(), outcome.elapsed());
+		lastResult.set(result);
+		return result;
 	}
 
 	@Transactional
@@ -82,10 +86,11 @@ public class PageRankService {
 			log.info("No ranks stored yet, running full batch instead of incremental");
 			return runBatchComputation();
 		}
-		Instant start = Instant.now();
 		GraphSnapshot snapshot = snapshotGraph();
 		if (snapshot.nodeCount() == 0) {
-			return new PageRankResult(0, 0.0, 0, true, Duration.between(start, Instant.now()));
+			PageRankResult empty = new PageRankResult("incremental", 0, 0.0, 0, true, false, Duration.ZERO);
+			lastResult.set(empty);
+			return empty;
 		}
 
 		Set<Long> touched = new HashSet<>();
@@ -96,26 +101,34 @@ public class PageRankService {
 				}
 			});
 		}
+		Set<Long> expanded = expandTouchedWithNeighbors(snapshot, touched);
 		double ratio = snapshot.nodeCount() == 0 ? 0.0 : (double) touched.size() / snapshot.nodeCount();
-		if (ratio > 0.4) {
+		double expandedRatio = snapshot.nodeCount() == 0 ? 0.0 : (double) expanded.size() / snapshot.nodeCount();
+		if (ratio > 0.4 || expandedRatio > 0.6) {
 			log.info("Touched ratio {} too high, running full batch", ratio);
 			return runBatchComputation();
 		}
 
 		double[] initialScores = buildInitialScores(snapshot);
 		int maxIterations = Math.max(3, Math.min(10, settings.maxIters() / 4));
-		ComputationOutcome outcome = compute(snapshot, initialScores, maxIterations);
+		ComputationOutcome outcome = compute(snapshot, initialScores, maxIterations, settings.maxUpdateDuration());
 		persistRanks(snapshot.persons(), outcome.scores());
 
-		Duration elapsed = Duration.between(start, Instant.now());
 		log.info("Incremental PageRank executed for {} touched nodes -> iterations={}, avgDelta={}, elapsed={} ms",
 				touched.size(),
 				outcome.iterations(),
 				String.format(Locale.US, "%.6f", outcome.averageDelta()),
-				elapsed.toMillis());
+				outcome.elapsed().toMillis());
 
-		return new PageRankResult(outcome.iterations(), outcome.averageDelta(), snapshot.nodeCount(),
-				outcome.converged(), elapsed);
+		PageRankResult result = new PageRankResult("incremental", outcome.iterations(), outcome.averageDelta(),
+				snapshot.nodeCount(), outcome.converged(), outcome.timeLimited(), outcome.elapsed());
+		lastResult.set(result);
+		return result;
+	}
+
+	@Transactional(readOnly = true)
+	public PageRankResult getLastResult() {
+		return lastResult.get();
 	}
 
 	private GraphSnapshot snapshotGraph() {
@@ -126,9 +139,11 @@ public class PageRankService {
 			indexMap.put(persons.get(i).getId(), i);
 		}
 		List<List<Edge>> adjacency = new ArrayList<>(nodeCount);
+		List<List<Edge>> incoming = new ArrayList<>(nodeCount);
 		double[] outgoingWeight = new double[nodeCount];
 		for (int i = 0; i < nodeCount; i++) {
 			adjacency.add(new ArrayList<>());
+			incoming.add(new ArrayList<>());
 		}
 		if (nodeCount > 0) {
 			for (Follow follow : followRepository.findAll()) {
@@ -138,14 +153,35 @@ public class PageRankService {
 					continue;
 				}
 				double weight = Math.max(0.0, follow.getQuality());
-				if (weight == 0.0) {
-					continue;
-				}
-				adjacency.get(sourceIndex).add(new Edge(targetIndex, weight));
-				outgoingWeight[sourceIndex] += weight;
+			if (weight == 0.0) {
+				continue;
+			}
+			adjacency.get(sourceIndex).add(new Edge(targetIndex, weight));
+			incoming.get(targetIndex).add(new Edge(sourceIndex, weight));
+			outgoingWeight[sourceIndex] += weight;
+		}
+	}
+	return new GraphSnapshot(persons, indexMap, adjacency, incoming, outgoingWeight);
+}
+
+	private Set<Long> expandTouchedWithNeighbors(GraphSnapshot snapshot, Set<Long> touchedIds) {
+		if (touchedIds == null || touchedIds.isEmpty()) {
+			return Set.of();
+		}
+		Set<Long> result = new HashSet<>(touchedIds);
+		for (Long id : touchedIds) {
+			Integer idx = snapshot.indexMap().get(id);
+			if (idx == null) {
+				continue;
+			}
+			for (Edge e : snapshot.adjacency().get(idx)) {
+				result.add(snapshot.persons().get(e.nodeIndex()).getId());
+			}
+			for (Edge e : snapshot.incoming().get(idx)) {
+				result.add(snapshot.persons().get(e.nodeIndex()).getId());
 			}
 		}
-		return new GraphSnapshot(persons, indexMap, adjacency, outgoingWeight);
+		return result;
 	}
 
 	private double[] buildInitialScores(GraphSnapshot snapshot) {
@@ -178,10 +214,11 @@ public class PageRankService {
 		return initial;
 	}
 
-	private ComputationOutcome compute(GraphSnapshot snapshot, double[] initialScores, int maxIterations) {
+	private ComputationOutcome compute(GraphSnapshot snapshot, double[] initialScores, int maxIterations,
+			Duration maxDuration) {
 		int nodeCount = snapshot.nodeCount();
 		if (nodeCount == 0) {
-			return new ComputationOutcome(new double[0], 0, 0.0, true);
+			return new ComputationOutcome(new double[0], 0, 0.0, true, false, Duration.ZERO);
 		}
 
 		double[] current = initialScores != null && initialScores.length == nodeCount
@@ -196,8 +233,14 @@ public class PageRankService {
 		int iterations = 0;
 		double lastAverageDelta = Double.MAX_VALUE;
 		boolean converged = false;
+		boolean timeLimited = false;
+		Instant start = Instant.now();
 
 		while (iterations < maxIterations) {
+			if (maxDuration != null && Duration.between(start, Instant.now()).compareTo(maxDuration) > 0) {
+				timeLimited = true;
+				break;
+			}
 			Arrays.fill(next, teleport);
 			double danglingMass = 0.0;
 
@@ -210,7 +253,7 @@ public class PageRankService {
 				}
 				double contribution = damping * rankValue / weightSum;
 				for (Edge edge : snapshot.adjacency().get(i)) {
-					next[edge.targetIndex()] += contribution * edge.weight();
+					next[edge.nodeIndex()] += contribution * edge.weight();
 				}
 			}
 
@@ -233,7 +276,8 @@ public class PageRankService {
 			}
 		}
 
-		return new ComputationOutcome(current, iterations, lastAverageDelta, converged);
+		Duration elapsed = Duration.between(start, Instant.now());
+		return new ComputationOutcome(current, iterations, lastAverageDelta, converged, timeLimited, elapsed);
 	}
 
 	private double[] uniformVector(int size) {
@@ -288,13 +332,17 @@ public class PageRankService {
 		rankDeltaRepository.saveAll(updatedDeltas);
 	}
 
-	private record Edge(int targetIndex, double weight) {
+	/**
+	 * Represents an edge to a neighbor node index with its weight.
+	 */
+	private record Edge(int nodeIndex, double weight) {
 	}
 
 	private record GraphSnapshot(
 			List<Person> persons,
 			Map<Long, Integer> indexMap,
 			List<List<Edge>> adjacency,
+			List<List<Edge>> incoming,
 			double[] outgoingWeight) {
 
 		int nodeCount() {
@@ -302,6 +350,12 @@ public class PageRankService {
 		}
 	}
 
-	private record ComputationOutcome(double[] scores, int iterations, double averageDelta, boolean converged) {
+	private record ComputationOutcome(
+			double[] scores,
+			int iterations,
+			double averageDelta,
+			boolean converged,
+			boolean timeLimited,
+			Duration elapsed) {
 	}
 }

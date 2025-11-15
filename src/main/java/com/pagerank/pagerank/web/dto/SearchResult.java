@@ -1,7 +1,18 @@
 package com.pagerank.pagerank.web.dto;
 
+import java.time.Instant;
+import java.util.List;
+
 /**
- * Minimal data transfer object for search responses.
+ * DTO para respuestas de búsqueda, incluyendo aportantes destacados.
  */
-public record SearchResult(String name, double score, String explanation) {
+public record SearchResult(
+		String name,
+		double score,
+		String explanation,
+		List<Contributor> contributors,
+		Instant updatedAt) {
+
+	public record Contributor(String name, double contribution) {
+	}
 }

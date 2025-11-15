@@ -8,6 +8,7 @@ import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.RequestParam;
 
 import com.pagerank.pagerank.web.dto.SearchResult;
+import com.pagerank.pagerank.services.PageRankService;
 import com.pagerank.pagerank.services.SearchService;
 import com.pagerank.pagerank.settings.PagerankSettingsProperties;
 
@@ -19,10 +20,12 @@ public class SearchController {
 
 	private final SearchService searchService;
 	private final PagerankSettingsProperties settings;
+	private final PageRankService pageRankService;
 
-	public SearchController(SearchService searchService, PagerankSettingsProperties settings) {
+	public SearchController(SearchService searchService, PagerankSettingsProperties settings, PageRankService pageRankService) {
 		this.searchService = searchService;
 		this.settings = settings;
+		this.pageRankService = pageRankService;
 	}
 
 	@GetMapping({ "/", "/search" })
@@ -40,6 +43,7 @@ public class SearchController {
 		model.addAttribute("results", results);
 		model.addAttribute("limit", effectiveLimit);
 		model.addAttribute("settings", settings);
+		model.addAttribute("metrics", pageRankService.getLastResult());
 
 		return "search/index";
 	}

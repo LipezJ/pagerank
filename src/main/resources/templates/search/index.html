@@ -2,38 +2,60 @@
 <html xmlns:th="http://www.thymeleaf.org" lang="es">
 <head>
     <meta charset="UTF-8">
-    <title>PageRank · Búsqueda de personas</title>
+    <title>Búsqueda PageRank</title>
 </head>
 <body>
-<div class="container">
-    <h1>Búsqueda impulsada por PageRank</h1>
-    <form th:action="@{/search}" method="get">
-        <input type="text" name="q" placeholder="Busca por nombre o alias"
-               th:value="${query}">
-        <input type="number" name="k" min="1" th:value="${limit}">
-        <button type="submit">Buscar</button>
-    </form>
+<h1>Búsqueda impulsada por PageRank</h1>
 
-    <section>
-        <p th:if="${#lists.isEmpty(results)}">
-            Aún no hay resultados: la Etapa 2 proveerá entidades y cálculos reales.
+<form th:action="@{/search}" method="get">
+    <label>Consulta:</label>
+    <input type="text" name="q" th:value="${query}">
+    <label>Top K:</label>
+    <input type="number" name="k" min="1" th:value="${limit}">
+    <button type="submit">Buscar</button>
+</form>
+
+<section>
+    <p th:if="${#lists.isEmpty(results)}">No hay resultados para mostrar.</p>
+
+    <div th:each="result : ${results}">
+        <h3>
+            <span th:text="${result.name()}">Nombre</span>
+            (<span th:text="${#numbers.formatDecimal(result.score(), 1, 4)}">0.0</span>)
+        </h3>
+        <p th:text="${result.explanation()}">Explicación breve.</p>
+        <p>
+            <strong>Última actualización:</strong>
+            <span th:text="${result.updatedAt() != null ? #temporals.format(result.updatedAt(),'yyyy-MM-dd HH:mm') : 'N/D'}">N/D</span>
         </p>
-
-        <div th:each="result : ${results}" class="result">
-            <h3>
-                <span th:text="${result.name()}">Nombre</span>
-                <small class="score" th:text="${#numbers.formatDecimal(result.score(), 1, 4)}">0.0</small>
-            </h3>
-            <p th:text="${result.explanation()}">Explicación breve.</p>
+        <div>
+            <strong>Top aportantes:</strong>
+            <ul>
+                <li th:if="${#lists.isEmpty(result.contributors())}">No hay aportantes</li>
+                <li th:each="c : ${result.contributors()}"
+                    th:text="|${c.name()} (${#numbers.formatDecimal(c.contribution(),1,4)})|">Aportante</li>
+            </ul>
         </div>
-    </section>
+        <hr>
+    </div>
+</section>
 
-    <footer>
-        Mostrando top <span th:text="${limit}">0</span> (K_TOP por defecto:
-        <span th:text="${settings.kTop()}">10</span>).
-        Ventana de recolección: <span th:text="${settings.collectionWindow()}">PT15M</span>,
-        damping: <span th:text="${settings.damping()}">0.85</span>.
-    </footer>
-</div>
+<section>
+    <h2>Parámetros y métricas</h2>
+    <p>Mostrando top <span th:text="${limit}">0</span> (K_TOP: <span th:text="${settings.kTop()}">10</span>).</p>
+    <p>Ventana de recolección: <span th:text="${settings.collectionWindow()}">PT15M</span></p>
+    <p>Damping: <span th:text="${settings.damping()}">0.85</span>, Epsilon: <span th:text="${settings.epsilon()}">1e-6</span></p>
+    <p th:if="${metrics != null}">
+        Última corrida PageRank:
+        modo <span th:text="${metrics.mode()}">batch</span>,
+        iteraciones <span th:text="${metrics.iterations()}">0</span>,
+        delta promedio <span th:text="${#numbers.formatDecimal(metrics.averageDelta(),1,6)}">0</span>,
+        nodos <span th:text="${metrics.nodeCount()}">0</span>,
+        convergió? <span th:text="${metrics.converged()}">false</span>,
+        limitado por tiempo? <span th:text="${metrics.timeLimited()}">false</span>,
+        duración <span th:text="${metrics.elapsed()}">PT0S</span>.
+    </p>
+    <p th:if="${metrics == null}">Aún no se ejecuta PageRank.</p>
+</section>
 </body>
 </html>
