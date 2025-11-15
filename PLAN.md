@@ -22,7 +22,7 @@ Cargamos entidades y relaciones desde los identificadores/fuentes provistos por 
 
 ## 6) Etapa 4: PageRank base (batch)
 
-Implementamos PageRank en un módulo `pagerank.py` usando **iteración de potencias**. Elegimos un **factor de amortiguación** por defecto de `0.85` y lo dejamos configurable. Para **nodos sin salidas** (dangling), redistribuimos su masa uniformemente en cada iteración. Definimos un **criterio de convergencia**: detener cuando la norma L1 del cambio medio por nodo baje de `EPSILON` (por ejemplo `1e-6`) o al llegar a `MAX_ITERS` (por ejemplo `50`). Este cálculo se corre completo la primera vez para inicializar `Rank`.
+Implementamos PageRank en un servicio `pagerank` usando **iteración de potencias**. Elegimos un **factor de amortiguación** por defecto de `0.85` y lo dejamos configurable. Para **nodos sin salidas** (dangling), redistribuimos su masa uniformemente en cada iteración. Definimos un **criterio de convergencia**: detener cuando la norma L1 del cambio medio por nodo baje de `EPSILON` (por ejemplo `1e-6`) o al llegar a `MAX_ITERS` (por ejemplo `50`). Este cálculo se corre completo la primera vez para inicializar `Rank`.
 
 ## 7) Etapa 5: Actualización incremental
 
