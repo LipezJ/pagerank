@@ -1,65 +1,38 @@
-# PageRank Web API
+# PageRank App (Spring Boot)
 
-Este proyecto expone una API REST sencilla para operar el grafo social y ejecutar PageRank. A continuación se listan los endpoints disponibles y ejemplos de uso rápido (todas las respuestas/solicitudes usan JSON).
+Esta app calcula PageRank sobre una red dirigida y expone una API mínima y dos vistas web.
 
-## `/api/search`
+## Cómo correrlo
 
-- `GET /api/search?q={texto}&k={limite}`  
-  Devuelve la lista de personas ordenadas por puntaje de PageRank. Si `q` es vacío, se entrega el top-K global (por defecto `K_TOP`, configurable vía `.env`).  
-  **Respuesta**: arreglo de objetos con `name`, `score` y `explanation`.
+Requisitos: JDK 21+ y Python 3 (para generar datos opcionales).
 
-## `/api/persons`
+1. Generar dataset de prueba (opcional):  
+   `./gradlew generateDataset`
+2. Ejecutar la app:  
+   `./gradlew bootRun`
+3. Abrir en el navegador:
+   - Vista de búsqueda: `http://localhost:8080/search`
+   - Grafo (D3): `http://localhost:8080/graph`
+   - Swagger UI: `http://localhost:8080/swagger-ui.html`
 
-- `POST /api/persons`  
-  Crea o actualiza una persona en la base. Cada alta gatilla una actualización incremental del PageRank.  
-  **Body**:
-  ```json
-  {
-    "name": "Ana Isabel Lopez",
-    "spamScore": 0.12
-  }
-  ```
-  **Respuesta**:  
-  ```json
-  {
-    "id": 1,
-    "name": "Ana Isabel Lopez",
-    "spamScore": 0.12,
-    "lastSeen": "2025-11-15T19:30:12.123Z"
-  }
-  ```
+## Configuración
 
-## `/api/follows`
+Parámetros en `settings/.env` (o variables de entorno):
+- PageRank: `DAMPING`, `EPSILON`, `MAX_ITERS`, `Z` (límite ms), `K_TOP`
+- Ingesta: `QUALITY_THRESHOLD`, `SPAM_PENALTY`
+- Dataset: `DATA_PERSONS_PATH`, `DATA_FOLLOWS_PATH`
+- DB: `PAGERANK_DB_PATH` (SQLite por defecto `pagerank.db`)
 
-- `POST /api/follows`  
-  Registra o actualiza una relación dirigida `source -> target`. Filtra automáticamente relaciones con `quality` por debajo del umbral configurado (`QUALITY_THRESHOLD`) y penaliza las cuentas con `spam_score` alto.  
-  **Body**:
-  ```json
-  {
-    "sourceId": 1,
-    "targetId": 4,
-    "quality": 0.8
-  }
-  ```
-  **Respuesta**: `200 OK` con el follow creado (campos `id`, `sourceId`, `targetId`, `quality`, `lastSeen`) o `202 Accepted` si la observación fue descartada (p. ej. calidad baja o ventana de recolección activa).
+## Vistas
 
-## `/api/pagerank`
+- **/search**: cuadro de texto y top-K ordenado por PageRank. Muestra score, aportantes principales y métricas de la última corrida (modo, iteraciones, delta, convergencia, duración).
+- **/graph**: visualización D3 del grafo. Tamaño de nodos proporcional al score, flechas dirigidas y resaltado de aristas entrantes/salientes al pasar el cursor.
 
-- `POST /api/pagerank/batch`  
-  Fuerza una corrida completa de PageRank (iteración de potencias) usando los parámetros `DAMPING`, `EPSILON` y `MAX_ITERS`. Útil si se quiere recalcular todo sin esperar al bootstrap.
+## API breve
 
-- `POST /api/pagerank/incremental`  
-  Ejecuta una actualización incremental sobre el subgrafo afectado (máx. ~10 iteraciones). Opcionalmente recibe un listado de `personIds` para restringir los nodos a recalcular:
-  ```json
-  { "personIds": [1, 4, 7] }
-  ```
-  Si no se proveen IDs, recalcula en base a los nodos recientemente modificados por otros servicios.
+- `GET /api/search?q=texto&k=K` → resultados ordenados por score.
+- `POST /api/persons` → crea/actualiza persona (`name`, `spamScore`).
+- `POST /api/follows` → crea/actualiza follow (`sourceId`, `targetId`, `quality`).
+- `POST /api/pagerank/batch` o `/api/pagerank/incremental` → ejecuta PageRank y devuelve métricas.
 
-Cada llamada a `/api/pagerank/*` retorna un objeto `PageRankResult` con `iterations`, `averageDelta`, `nodeCount`, `converged` y `elapsed` (duración).
-
----
-
-**Tips**
-
-- Los parámetros (`K_TOP`, `QUALITY_THRESHOLD`, `DAMPING`, etc.) se configuran en `settings/.env`.
-- El dataset inicial puede generarse con `python scripts/generate_data.py` y se importa automáticamente al arrancar si la base está vacía.
+Detalles interactivos en Swagger UI.
