@@ -74,7 +74,7 @@ public class SearchService {
 		Person person = rank.getPerson();
 		String explanation = "Score " + formatScore(rank.getScore());
 		List<Contributor> contributors = topContributors(person, 3);
-		return new SearchResult(person.getName(), rank.getScore(), explanation, contributors, rank.getUpdatedAt());
+		return new SearchResult(person.getId(), person.getName(), rank.getScore(), explanation, contributors, rank.getUpdatedAt());
 	}
 
 	private SearchResult toResultFromPerson(Person person) {
@@ -84,7 +84,7 @@ public class SearchService {
 		String explanation = score > 0
 				? "Score " + formatScore(score)
 				: "Aun sin calculo de PageRank";
-		return new SearchResult(person.getName(), score, explanation, List.of(), null);
+		return new SearchResult(person.getId(), person.getName(), score, explanation, List.of(), null);
 	}
 
 	private String formatScore(double score) {

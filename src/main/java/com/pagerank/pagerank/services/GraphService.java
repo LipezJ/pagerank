@@ -1,10 +1,14 @@
 package com.pagerank.pagerank.services;
 
 import java.time.Instant;
+import java.util.ArrayList;
+import java.util.HashSet;
 import java.util.List;
+import java.util.Set;
 
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
+import org.springframework.data.domain.Sort;
 
 import com.pagerank.pagerank.domain.model.Follow;
 import com.pagerank.pagerank.domain.model.Person;
@@ -47,6 +51,11 @@ public class GraphService {
 		return personRepository.save(person);
 	}
 
+	@Transactional(readOnly = true)
+	public Person getPerson(Long personId) {
+		return requirePerson(personId);
+	}
+
 	public Person touchPerson(Long personId, Instant lastSeen) {
 		Person person = requirePerson(personId);
 		person.setLastSeen(lastSeen != null ? lastSeen : Instant.now());
@@ -61,6 +70,11 @@ public class GraphService {
 		return followRepository.findBySourceIdAndTargetId(sourceId, targetId)
 				.map(existing -> updateFollow(existing, source, target, quality, effectiveLastSeen))
 				.orElseGet(() -> followRepository.save(new Follow(source, target, quality, effectiveLastSeen)));
+	}
+
+	@Transactional(readOnly = true)
+	public List<Person> getAllPersonsSorted() {
+		return personRepository.findAll(Sort.by(Sort.Direction.ASC, "name"));
 	}
 
 	private Follow updateFollow(Follow follow, Person source, Person target, double quality, Instant lastSeen) {
@@ -99,6 +113,29 @@ public class GraphService {
 	@Transactional(readOnly = true)
 	public List<Follow> getIncomingFollows(Long personId) {
 		return followRepository.findByTargetId(personId);
+	}
+
+	public Set<Long> syncOutgoingFollows(Long personId, Set<Long> keepTargetIds) {
+		Person person = requirePerson(personId);
+		List<Follow> outgoing = followRepository.findBySourceId(personId);
+
+		Set<Long> keepTargets = keepTargetIds != null ? new HashSet<>(keepTargetIds) : Set.of();
+		List<Follow> toDelete = new ArrayList<>();
+		for (Follow follow : outgoing) {
+			if (!keepTargets.contains(follow.getTarget().getId())) {
+				toDelete.add(follow);
+			}
+		}
+		if (!toDelete.isEmpty()) {
+			followRepository.deleteAll(toDelete);
+		}
+
+		Set<Long> touched = new HashSet<>();
+		touched.add(person.getId());
+		for (Follow follow : toDelete) {
+			touched.add(follow.getTarget().getId());
+		}
+		return touched;
 	}
 
 	private Person requirePerson(Long personId) {

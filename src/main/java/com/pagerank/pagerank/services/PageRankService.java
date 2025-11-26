@@ -57,6 +57,7 @@ public class PageRankService {
 
 	@Transactional
 	public PageRankResult runBatchComputation() {
+		// Ejecuta PageRank completo (batch) sobre todo el grafo con un vector uniforme inicial.
 		GraphSnapshot snapshot = snapshotGraph();
 		if (snapshot.nodeCount() == 0) {
 			PageRankResult empty = new PageRankResult("batch", 0, 0.0, 0, true, false, Duration.ZERO);
@@ -82,6 +83,7 @@ public class PageRankService {
 
 	@Transactional
 	public PageRankResult runIncrementalUpdate(Iterable<Long> touchedPersonIds) {
+		// Ejecuta PageRank incremental si ya existen ranks; si no, cae a batch.
 		if (rankRepository.count() == 0) {
 			log.info("No ranks stored yet, running full batch instead of incremental");
 			return runBatchComputation();
@@ -101,11 +103,13 @@ public class PageRankService {
 				}
 			});
 		}
+		// Expand touched to neighbors so local changes propagate in a small subgraph.
 		Set<Long> expanded = expandTouchedWithNeighbors(snapshot, touched);
 		double ratio = snapshot.nodeCount() == 0 ? 0.0 : (double) touched.size() / snapshot.nodeCount();
 		double expandedRatio = snapshot.nodeCount() == 0 ? 0.0 : (double) expanded.size() / snapshot.nodeCount();
-		if (ratio > 0.4 || expandedRatio > 0.6) {
-			log.info("Touched ratio {} too high, running full batch", ratio);
+		boolean tooLarge = ratio > 0.4 || (expandedRatio > 0.6 && touched.size() > 10);
+		if (tooLarge) {
+			log.info("Touched ratio {} (expanded {}) too high, running full batch", ratio, expandedRatio);
 			return runBatchComputation();
 		}
 
@@ -128,10 +132,12 @@ public class PageRankService {
 
 	@Transactional(readOnly = true)
 	public PageRankResult getLastResult() {
+		// Devuelve el ultimo resultado calculado (batch o incremental).
 		return lastResult.get();
 	}
 
 	private GraphSnapshot snapshotGraph() {
+		// Captura las listas de personas, mapea id -> indice, construye matrices de adyacencia y pesos salientes.
 		List<Person> persons = personRepository.findAll();
 		int nodeCount = persons.size();
 		Map<Long, Integer> indexMap = new HashMap<>(nodeCount);
@@ -169,6 +175,7 @@ public class PageRankService {
 			return Set.of();
 		}
 		Set<Long> result = new HashSet<>(touchedIds);
+		// Amplia el conjunto con vecinos entrantes y salientes para propagar cambios locales.
 		for (Long id : touchedIds) {
 			Integer idx = snapshot.indexMap().get(id);
 			if (idx == null) {
@@ -190,6 +197,7 @@ public class PageRankService {
 			return new double[0];
 		}
 
+		// Usa los ranks previos como vector inicial normalizado; si no hay, usa uniforme.
 		double[] initial = new double[nodeCount];
 		List<Rank> ranks = rankRepository.findAll();
 		double total = 0.0;
@@ -214,6 +222,17 @@ public class PageRankService {
 		return initial;
 	}
 
+	/*
+	 * Ecuacion base de PageRank:
+	 * p_{k+1} = (1-d)/N * 1  +  d * (A^T * p_k + (sum_{i en D} p_k(i) / N) * 1)
+	 * donde:
+	 * - N es el numero de nodos,
+	 * - d es el factor de amortiguacion,
+	 * - A usa w_ij / sum_out_i como probabilidad de transicion de i a j.
+	 * - w_ij es el peso de la arista i->j.
+	 * - sum_out_i es la suma de pesos salientes de i.
+	 * - D son los nodos colgantes y su masa se redistribuye uniforme.
+	 */
 	private ComputationOutcome compute(GraphSnapshot snapshot, double[] initialScores, int maxIterations,
 			Duration maxDuration) {
 		int nodeCount = snapshot.nodeCount();
@@ -221,14 +240,15 @@ public class PageRankService {
 			return new ComputationOutcome(new double[0], 0, 0.0, true, false, Duration.ZERO);
 		}
 
+		// current es el vector de probabilidades p_k; si hay warm start lo usamos.
 		double[] current = initialScores != null && initialScores.length == nodeCount
 				? Arrays.copyOf(initialScores, nodeCount)
 				: uniformVector(nodeCount);
 		double[] next = new double[nodeCount];
 
-		double damping = settings.damping();
-		double epsilon = settings.epsilon();
-		double teleport = (1.0 - damping) / nodeCount;
+		double damping = settings.damping(); // factor de amortiguacion d
+		double epsilon = settings.epsilon(); // tolerancia de convergencia
+		double teleport = (1.0 - damping) / nodeCount; // termino de teletransporte uniforme
 
 		int iterations = 0;
 		double lastAverageDelta = Double.MAX_VALUE;
@@ -237,37 +257,43 @@ public class PageRankService {
 		Instant start = Instant.now();
 
 		while (iterations < maxIterations) {
+			// Corte por tiempo si supera maxDuration
 			if (maxDuration != null && Duration.between(start, Instant.now()).compareTo(maxDuration) > 0) {
 				timeLimited = true;
 				break;
 			}
+			// Inicializamos con el vector de teletransporte: (1-d)/N en cada nodo.
 			Arrays.fill(next, teleport);
-			double danglingMass = 0.0;
+			double danglingMass = 0.0; // suma de masa en nodos sin salientes
 
 			for (int i = 0; i < nodeCount; i++) {
 				double rankValue = current[i];
 				double weightSum = snapshot.outgoingWeight()[i];
+				// Nodos colgantes: acumulan para redistribuir luego.
 				if (weightSum <= 0.0 || snapshot.adjacency().get(i).isEmpty()) {
 					danglingMass += rankValue;
 					continue;
 				}
+				// Para cada arista i->j, aportamos d * p_i * (w_ij / sum_out_i)
 				double contribution = damping * rankValue / weightSum;
 				for (Edge edge : snapshot.adjacency().get(i)) {
 					next[edge.nodeIndex()] += contribution * edge.weight();
 				}
 			}
 
+			// Redistribuir masa de nodos colgantes uniformemente: d * (danglingMass / N)
 			double danglingContribution = damping * danglingMass / nodeCount;
 			for (int i = 0; i < nodeCount; i++) {
 				next[i] += danglingContribution;
 			}
 
+			// Delta L1 promedio = sum |p_{k+1} - p_k| / N
 			double deltaSum = 0.0;
 			for (int i = 0; i < nodeCount; i++) {
 				deltaSum += Math.abs(next[i] - current[i]);
 			}
 			lastAverageDelta = deltaSum / nodeCount;
-			System.arraycopy(next, 0, current, 0, nodeCount);
+			System.arraycopy(next, 0, current, 0, nodeCount); // p_{k+1} -> p_k
 
 			iterations++;
 			if (lastAverageDelta <= epsilon) {
@@ -285,12 +311,13 @@ public class PageRankService {
 		if (size == 0) {
 			return vector;
 		}
-		double value = 1.0 / size;
+		double value = 1.0 / size; // uniform prior: sum(vector)=1
 		Arrays.fill(vector, value);
 		return vector;
 	}
 
 	private void persistRanks(List<Person> persons, double[] scores) {
+		// Guarda los nuevos scores y sus deltas por persona, reutilizando los existentes.
 		Map<Long, Rank> existingRanks = rankRepository.findAll().stream()
 				.collect(Collectors.toMap(Rank::getId, Function.identity()));
 		Map<Long, RankDelta> existingDeltas = rankDeltaRepository.findAll().stream()

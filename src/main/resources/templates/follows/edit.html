@@ -1,0 +1,98 @@
+<!DOCTYPE html>
+<html xmlns:th="http://www.thymeleaf.org" lang="es">
+<head>
+    <meta charset="UTF-8">
+    <title>Editar seguidos</title>
+</head>
+<body>
+<h1 th:text="'Editar seguidos de ' + ${person.name}">Editar seguidos</h1>
+
+<p>Marca los seguidos que quieres mantener. Los desmarcados se eliminaran cuando guardes.</p>
+
+<div th:if="${message != null}">
+    <p th:text="${message}">Mensaje</p>
+</div>
+<div th:if="${errorMessage != null}">
+    <p th:text="${errorMessage}">Error</p>
+</div>
+
+<form th:action="@{/follows/{id}(id=${person.id})}" method="post">
+    <table>
+        <thead>
+        <tr>
+            <th>Mantener</th>
+            <th>Persona seguida</th>
+            <th>Calidad</th>
+            <th>Ultima vez vista</th>
+        </tr>
+        </thead>
+        <tbody>
+        <tr th:if="${#lists.isEmpty(outgoing)}">
+            <td colspan="4">No tiene seguidos registrados.</td>
+        </tr>
+        <tr th:each="follow : ${outgoing}">
+            <td>
+                <input type="checkbox" name="keepTargetId" th:value="${follow.target.id}" checked="checked">
+            </td>
+            <td th:text="${follow.target.name}">Nombre</td>
+            <td th:text="${#numbers.formatDecimal(follow.quality, 1, 4)}">0.0</td>
+            <td th:text="${#temporals.format(follow.lastSeen, 'yyyy-MM-dd HH:mm')}">N/D</td>
+        </tr>
+        </tbody>
+    </table>
+    <button type="submit">Guardar cambios</button>
+</form>
+
+<h2>Agregar seguido</h2>
+<form th:action="@{/follows/{id}/add(id=${person.id})}" method="post">
+    <label for="targetId">Persona a seguir:</label>
+    <select id="targetId" name="targetId" required>
+        <option value="">Selecciona una persona</option>
+        <option th:each="p : ${persons}" th:value="${p.id}" th:text="${p.name}">Persona</option>
+    </select>
+    <button type="submit">Agregar seguido</button>
+</form>
+
+<br>
+
+<div th:if="${incremental != null}">
+    <h2>Actualizacion</h2>
+    <table>
+        <tr>
+            <th align="left">Modo</th>
+            <td align="left" th:text="${incremental.mode()}">incremental</td>
+        </tr>
+        <tr>
+            <th align="left">Iteraciones</th>
+            <td align="left" th:text="${incremental.iterations()}">0</td>
+        </tr>
+        <tr>
+            <th align="left">Delta promedio</th>
+            <td align="left" th:text="${#numbers.formatDecimal(incremental.averageDelta(),1,6)}">0.0</td>
+        </tr>
+        <tr>
+            <th align="left">Nodos</th>
+            <td align="left" th:text="${incremental.nodeCount()}">0</td>
+        </tr>
+        <tr>
+            <th align="left">Convergio?</th>
+            <td align="left" th:text="${incremental.converged()}">false</td>
+        </tr>
+        <tr>
+            <th align="left">Limitado por tiempo?</th>
+            <td align="left" th:text="${incremental.timeLimited()}">false</td>
+        </tr>
+        <tr>
+            <th align="left">Duracion</th>
+            <td align="left" th:text="${incremental.elapsed()}">PT0S</td>
+        </tr>
+    </table>
+</div>
+
+<p>
+    <a th:href="@{/search}">Ir al buscador</a>
+    |
+    <a th:href="@{/graph}">Ir al grafo</a>
+</p>
+</body>
+</html>

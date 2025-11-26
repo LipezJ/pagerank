@@ -7,6 +7,7 @@ import java.util.List;
  * DTO para respuestas de búsqueda, incluyendo aportantes destacados.
  */
 public record SearchResult(
+		Long id,
 		String name,
 		double score,
 		String explanation,
