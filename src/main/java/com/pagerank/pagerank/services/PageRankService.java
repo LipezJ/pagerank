@@ -368,10 +368,11 @@ public class PageRankService {
 
 	/*
 	 * Ecuacion base de PageRank:
-	 * p_{k+1} = (1-d)/N * 1  +  d * (A^T * p_k + (sum_{i en D} p_k(i) / N) * 1)
+	 * p_{k+1} = (1-d)/N * e  +  d * (A^T * p_k + (sum_{i en D} p_k(i) / N) * e)
 	 * donde:
 	 * - N es el numero de nodos,
 	 * - d es el factor de amortiguacion,
+	 * - e es el vector de unos (aporte uniforme en cada componente),
 	 * - A usa w_ij / sum_out_i como probabilidad de transicion de i a j.
 	 * - w_ij es el peso de la arista i->j.
 	 * - sum_out_i es la suma de pesos salientes de i.
