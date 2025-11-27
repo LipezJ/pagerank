@@ -53,6 +53,12 @@ public class IngestionService {
 		this.spamPenalty = settings.spamPenalty();
 	}
 
+	/**
+	 * Crea o refresca una persona observada y dispara PageRank incremental si cambia.
+	 *
+	 * @param observation datos observados (nombre, spamScore, timestamp).
+	 * @return persona creada o actualizada.
+	 */
 	public Person collectPerson(PersonObservation observation) {
 		String normalizedName = normalizeName(observation.name());
 		Instant observedAt = observation.observedAt() != null ? observation.observedAt() : Instant.now();
@@ -80,6 +86,12 @@ public class IngestionService {
 		return result;
 	}
 
+	/**
+	 * Crea o refresca un follow observado si supera el umbral de calidad y dispara incremental.
+	 *
+	 * @param observation follow observado (origen, destino, calidad, timestamp).
+	 * @return follow persistido, si fue aceptado.
+	 */
 	public Optional<Follow> collectFollow(FollowObservation observation) {
 		Assert.notNull(observation, "Observation cannot be null");
 		Long sourceId = observation.sourcePersonId();
@@ -112,6 +124,15 @@ public class IngestionService {
 		return Optional.of(saved);
 	}
 
+	/**
+	 * Variante de collectFollow que busca por nombres, valida y delega.
+	 *
+	 * @param sourceName nombre del origen.
+	 * @param targetName nombre del destino.
+	 * @param quality calidad observada.
+	 * @param observedAt instante observado; si es nulo se usa ahora.
+	 * @return follow persistido, si fue aceptado.
+	 */
 	public Optional<Follow> collectFollowByNames(String sourceName, String targetName, double quality, Instant observedAt) {
 		if (!StringUtils.hasText(sourceName) || !StringUtils.hasText(targetName)) {
 			return Optional.empty();

@@ -31,6 +31,11 @@ public class DatasetBootstrapper implements ApplicationRunner {
 		this.personRepository = personRepository;
 	}
 
+	/**
+	 * Carga el dataset inicial desde los CSV configurados si la base aun no tiene personas.
+	 *
+	 * @param args argumentos de arranque de la aplicacion.
+	 */
 	@Override
 	public void run(ApplicationArguments args) {
 		long count = personRepository.count();

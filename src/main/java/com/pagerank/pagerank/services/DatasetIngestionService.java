@@ -27,6 +27,12 @@ public class DatasetIngestionService {
 		this.ingestionService = ingestionService;
 	}
 
+	/**
+	 * Importa personas y follows desde CSV si ambos archivos existen.
+	 *
+	 * @param personsPath ruta al CSV de personas.
+	 * @param followsPath ruta al CSV de follows.
+	 */
 	public void loadIfAvailable(Path personsPath, Path followsPath) {
 		if (!Files.exists(personsPath) || !Files.exists(followsPath)) {
 			log.info("Dataset files not found (persons: {}, follows: {}), skipping bootstrap", personsPath, followsPath);

@@ -30,6 +30,11 @@ public class PageRankBootstrapper implements ApplicationRunner {
 		this.rankRepository = rankRepository;
 	}
 
+	/**
+	 * Ejecuta el PageRank batch inicial si hay personas y todavia no existen ranks.
+	 *
+	 * @param args argumentos de arranque de la aplicacion.
+	 */
 	@Override
 	public void run(ApplicationArguments args) {
 		long personCount = personRepository.count();

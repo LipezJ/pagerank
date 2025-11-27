@@ -127,8 +127,7 @@
             .attr("font-size", "12px")
             .text(d => `(${d.percentage.toFixed(2)}%)`);
 
-
-        simulation.on("tick", () => {
+        const updatePositions = () => {
             link
                 .attr("x1", d => {
                     const dx = d.target.x - d.source.x;
@@ -160,7 +159,16 @@
                 });
 
             node.attr("transform", d => `translate(${d.x},${d.y})`);
-        });
+        };
+
+        simulation.on("tick", updatePositions);
+
+        const SETTLE_TICKS = 300;
+        for (let i = 0; i < SETTLE_TICKS; i += 1) {
+            simulation.tick();
+        }
+        updatePositions();
+        simulation.stop();
 
         node.on("mouseover", function (event, d) {
             link

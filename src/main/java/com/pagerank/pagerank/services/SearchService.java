@@ -39,6 +39,13 @@ public class SearchService {
 		this.followRepository = followRepository;
 	}
 
+	/**
+	 * Busca personas ordenadas por PageRank o por nombre si hay coincidencia parcial.
+	 *
+	 * @param query texto a buscar en el nombre; si es nulo o vacio devuelve el top por score.
+	 * @param limit cantidad maxima de resultados a devolver.
+	 * @return lista ordenada de resultados de busqueda con score y contribuciones.
+	 */
 	public List<SearchResult> search(String query, int limit) {
 		int effectiveLimit = Math.max(limit, 1);
 		Pageable pageable = PageRequest.of(0, effectiveLimit);

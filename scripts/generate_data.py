@@ -30,12 +30,19 @@ FIRST_NAMES: Sequence[str] = (
     "Carla",
     "Miguel",
     "Sofia",
+    "Javier",
+    "Lucia",
+    "Pedro",
+    "Mariana",
 )
 
 MIDDLE_NAMES: Sequence[str] = (
     "Isabel",
     "Antonio",
     "Raul",
+    "Elena",
+    "Martin",
+    "Andres",
 )
 
 LAST_NAMES: Sequence[str] = (
@@ -44,6 +51,9 @@ LAST_NAMES: Sequence[str] = (
     "Gonzalez",
     "Torres",
     "Ramirez",
+    "Fernandez",
+    "Martinez",
+    "Hernandez",
 )
 
 

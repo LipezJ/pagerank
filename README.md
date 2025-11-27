@@ -4,7 +4,7 @@ Esta app calcula PageRank sobre una red dirigida y expone una API mínima y dos 
 
 ## Cómo correrlo
 
-Requisitos: JDK 21+ y Python 3 (para generar datos opcionales).
+Requisitos: JDK 25 y Python 3 (para generar datos opcionales).
 
 1. Generar dataset de prueba (opcional):  
    `./gradlew generateDataset`
